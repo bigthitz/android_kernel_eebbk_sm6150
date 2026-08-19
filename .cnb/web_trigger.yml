@@ -1,0 +1,20 @@
+branch:
+  - reg: .*
+    buttons:
+      - name: 编译内核
+        description: 手动触发内核编译（sm6150 / sdmsteppe-perf_defconfig）
+        event: web_trigger_build
+        inputs:
+          - name: 编译选项
+            collapsed: false
+            inputs:
+              clean_build:
+                name: 清理后全量编译
+                description: 开启后删除 out 目录，进行全量编译
+                type: switch
+                default: "false"
+                options:
+                  - name: 开启
+                    value: "true"
+                  - name: 关闭
+                    value: "false"

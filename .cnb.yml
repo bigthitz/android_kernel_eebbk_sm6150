@@ -1,0 +1,79 @@
+$:
+  web_trigger_build:
+    - name: build-kernel
+      runner:
+        cpus: 16
+      lock:
+        key: kernel-build
+        wait: true
+      docker:
+        build:
+          dockerfile: ./Dockerfile
+          by: [./Dockerfile]
+        volumes:
+          - kernel-toolchains:/opt/toolchains:rw
+          - kernel-ccache:/root/.cache/ccache:rw
+      services:
+        - docker
+      env:
+        KBUILD_BUILD_HOST: CNB-Build
+        ARCH: arm64
+        SUBARCH: arm64
+        CROSS_COMPILE: aarch64-linux-android-
+        CLANG_TRIPLE: aarch64-linux-gnu-
+        TARGET_PRODUCT: sm6150
+      stages:
+        - name: prepare toolchains
+          script: |
+            set -e
+            mkdir -p /opt/toolchains
+            if [ ! -d /opt/toolchains/clang/bin/clang ]; then
+              rm -rf /opt/toolchains/clang
+              git clone --depth 1 https://github.com/LineageOS/android_prebuilts_clang_kernel_linux-x86_clang-r416183b /opt/toolchains/clang
+            fi
+            if [ ! -d /opt/toolchains/gcc/bin/aarch64-linux-android-gcc ]; then
+              rm -rf /opt/toolchains/gcc
+              git clone -b lineage-19.1 --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 /opt/toolchains/gcc
+            fi
+            export PATH="/opt/toolchains/clang/bin:/opt/toolchains/gcc/bin:$PATH"
+            clang --version | head -1
+            aarch64-linux-android-gcc --version | head -1
+        - name: build kernel
+          script: |
+            set -e
+            export PATH="/opt/toolchains/clang/bin:/opt/toolchains/gcc/bin:$PATH"
+            export ARCH=arm64 SUBARCH=arm64
+            export CROSS_COMPILE=aarch64-linux-android-
+            export CLANG_TRIPLE=aarch64-linux-gnu-
+            export TARGET_PRODUCT=sm6150
+            export CCACHE_DIR=/root/.cache/ccache
+            ccache -M 2G
+            cd $CNB_BUILD_WORKSPACE
+            if [ "$clean_build" = "true" ]; then rm -rf out; fi
+            make -j$(nproc --all) O=out CC="ccache clang" vendor/sdmsteppe-perf_defconfig h130.config
+            make -j$(nproc --all) O=out CC="ccache clang" DTC=dtc 2>&1 | tee kernel.log
+        - name: check artifacts
+          script: |
+            cd $CNB_BUILD_WORKSPACE
+            if [ -f out/arch/arm64/boot/Image.gz ]; then
+              echo "CHECK_FILE_IS_OK=true"
+            else
+              echo "Kernel output file is empty"
+              exit 1
+            fi
+        - name: publish artifacts
+          script: |
+            set -e
+            cd $CNB_BUILD_WORKSPACE
+            BUILD_TIME=$(TZ=Asia/Shanghai date "+%Y%m%d%H%M")
+            SAFE_BRANCH=$(echo $CNB_BRANCH | tr '/' '-')
+            mkdir -p dist
+            cp out/arch/arm64/boot/Image.gz dist/ 2>/dev/null || true
+            cp -r out/arch/arm64/boot/dts/eebbk-qcom/sdmmagpie* dist/ 2>/dev/null || true
+            cp kernel.log dist/ 2>/dev/null || true
+            printf 'FROM scratch\nCOPY . /kernel/\n' > dist/Dockerfile
+            docker login -u "$CNB_TOKEN_USER_NAME" -p "$CNB_TOKEN" "$CNB_DOCKER_REGISTRY"
+            IMAGE="$CNB_DOCKER_REGISTRY/$CNB_REPO_SLUG/kernel:$SAFE_BRANCH-$BUILD_TIME"
+            docker build -t "$IMAGE" dist
+            docker push "$IMAGE"
+            echo "Artifacts pushed: $IMAGE"
