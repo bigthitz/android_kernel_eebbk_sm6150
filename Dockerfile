@@ -6,6 +6,5 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     dpkg-dev liblz4-tool make optipng maven libssl-dev pwgen libswitch-perl \
     policycoreutils minicom libxml-sax-base-perl libxml-simple-perl bc libc6-dev-i386 \
     libx11-dev lib32z-dev libgl1-mesa-dev xsltproc unzip device-tree-compiler \
-    bison build-essential device-tree-compiler flex gcc-aarch64-linux-gnu python3 \
-    python3-dev python3-venv swig ccache \
+    python3 python3-dev python3-venv swig ccache \
     && rm -rf /var/lib/apt/lists/*
