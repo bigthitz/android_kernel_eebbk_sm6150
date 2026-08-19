@@ -1,4 +1,107 @@
 $:
+  api_trigger:
+    - name: build-kernel
+      runner:
+        cpus: 16
+      lock:
+        key: kernel-build
+        wait: true
+      docker:
+        build:
+          dockerfile: ./Dockerfile
+          by: [./Dockerfile]
+        volumes:
+          - kernel-toolchains:/opt/toolchains:rw
+          - kernel-ccache:/root/.cache/ccache:rw
+      services:
+        - docker
+      env:
+        KBUILD_BUILD_HOST: CNB-Build
+        ARCH: arm64
+        SUBARCH: arm64
+        CROSS_COMPILE: aarch64-linux-android-
+        CLANG_TRIPLE: aarch64-linux-gnu-
+        TARGET_PRODUCT: sm6150
+      stages:
+        - name: prepare toolchains
+          script: |
+            set -e
+            TC="/opt/toolchains"
+            mkdir -p "$TC" 2>/dev/null || true
+            if [ ! -w "$TC" ]; then
+              echo "[warn] $TC 不可写（当前用户 $(id -un), uid=$(id -u)），改用工作区目录"
+              TC="$CNB_BUILD_WORKSPACE/.toolchains"
+              mkdir -p "$TC"
+            fi
+            echo "==> TOOLCHAIN_DIR=$TC"
+            if [ ! -x "$TC/clang/bin/clang" ]; then
+              rm -rf "$TC/clang"
+              git clone --depth 1 https://github.com/LineageOS/android_prebuilts_clang_kernel_linux-x86_clang-r416183b "$TC/clang"
+            fi
+            if [ ! -x "$TC/gcc/bin/aarch64-linux-android-gcc" ]; then
+              rm -rf "$TC/gcc"
+              git clone -b lineage-19.1 --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 "$TC/gcc"
+            fi
+            export PATH="$TC/clang/bin:$TC/gcc/bin:$PATH"
+            clang --version | head -1
+            aarch64-linux-android-gcc --version | head -1
+            echo "$TC" > "$CNB_BUILD_WORKSPACE/.toolchain_dir"
+        - name: build kernel
+          script: |
+            set -e
+            if [ -f "$CNB_BUILD_WORKSPACE/.toolchain_dir" ]; then
+              TC="$(cat "$CNB_BUILD_WORKSPACE/.toolchain_dir")"
+            else
+              TC="/opt/toolchains"
+              mkdir -p "$TC" 2>/dev/null || true
+              [ -w "$TC" ] || TC="$CNB_BUILD_WORKSPACE/.toolchains"
+            fi
+            export PATH="$TC/clang/bin:$TC/gcc/bin:$PATH"
+            export ARCH=arm64 SUBARCH=arm64
+            export CROSS_COMPILE=aarch64-linux-android-
+            export CLANG_TRIPLE=aarch64-linux-gnu-
+            export TARGET_PRODUCT=sm6150
+            export CCACHE_DIR=/root/.cache/ccache
+            mkdir -p "$CCACHE_DIR" 2>/dev/null || true
+            if [ ! -w "$CCACHE_DIR" ]; then
+              echo "[warn] $CCACHE_DIR 不可写，改用工作区缓存目录"
+              export CCACHE_DIR="$CNB_BUILD_WORKSPACE/.ccache"
+              mkdir -p "$CCACHE_DIR"
+            fi
+            ccache -M 2G
+            cd $CNB_BUILD_WORKSPACE
+            if [ "$clean_build" = "true" ]; then rm -rf out; fi
+            make -j$(nproc --all) O=out CC="ccache clang" vendor/sdmsteppe-perf_defconfig h130.config
+            make -j$(nproc --all) O=out CC="ccache clang" DTC=dtc > kernel.log 2>&1 || {
+              rc=$?
+              echo "=== make FAILED (rc=$rc), tail of kernel.log ==="
+              tail -200 kernel.log
+              exit $rc
+            }
+            tail -20 kernel.log
+        - name: check artifacts
+          script: |
+            cd $CNB_BUILD_WORKSPACE
+            if [ -f out/arch/arm64/boot/Image.gz ]; then
+              echo "CHECK_FILE_IS_OK=true"
+            else
+              echo "Kernel output file is empty"
+              exit 1
+            fi
+        - name: collect artifacts
+          script: |
+            set -e
+            cd $CNB_BUILD_WORKSPACE
+            rm -rf dist && mkdir -p dist
+            cp out/arch/arm64/boot/Image.gz dist/ 2>/dev/null || true
+            cp -r out/arch/arm64/boot/dts/eebbk-qcom/sdmmagpie* dist/ 2>/dev/null || true
+            cp kernel.log dist/ 2>/dev/null || true
+            ls -lh dist/
+        - name: Upload a Build Artifact
+          image: cnbcool/attachments:latest
+          settings:
+            attachments:
+              - dist
   web_trigger_build:
     - name: build-kernel
       runner:
