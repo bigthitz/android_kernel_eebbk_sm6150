@@ -101,7 +101,7 @@ $:
           image: cnbcool/attachments:latest
           settings:
             attachments:
-              - dist
+              - "./dist/*"
   web_trigger_build:
     - name: build-kernel
       runner:
@@ -207,4 +207,4 @@ $:
           image: cnbcool/attachments:latest
           settings:
             attachments:
-              - dist
+              - "./dist/*"
