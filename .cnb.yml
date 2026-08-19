@@ -61,19 +61,17 @@ $:
               echo "Kernel output file is empty"
               exit 1
             fi
-        - name: publish artifacts
+        - name: collect artifacts
           script: |
             set -e
             cd $CNB_BUILD_WORKSPACE
-            BUILD_TIME=$(TZ=Asia/Shanghai date "+%Y%m%d%H%M")
-            SAFE_BRANCH=$(echo $CNB_BRANCH | tr '/' '-')
-            mkdir -p dist
+            rm -rf dist && mkdir -p dist
             cp out/arch/arm64/boot/Image.gz dist/ 2>/dev/null || true
             cp -r out/arch/arm64/boot/dts/eebbk-qcom/sdmmagpie* dist/ 2>/dev/null || true
             cp kernel.log dist/ 2>/dev/null || true
-            printf 'FROM scratch\nCOPY . /kernel/\n' > dist/Dockerfile
-            docker login -u "$CNB_TOKEN_USER_NAME" -p "$CNB_TOKEN" "$CNB_DOCKER_REGISTRY"
-            IMAGE="$CNB_DOCKER_REGISTRY/$CNB_REPO_SLUG/kernel:$SAFE_BRANCH-$BUILD_TIME"
-            docker build -t "$IMAGE" dist
-            docker push "$IMAGE"
-            echo "Artifacts pushed: $IMAGE"
+            ls -lh dist/
+        - name: Upload a Build Artifact
+          image: cnbcool/attachments:latest
+          settings:
+            attachments:
+              - dist
