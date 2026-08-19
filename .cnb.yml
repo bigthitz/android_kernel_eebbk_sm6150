@@ -50,6 +50,8 @@ $:
         - name: build kernel
           script: |
             set -e
+            # 管道中任一命令失败都视为失败，避免 make 报错被 tee 吞掉退出码
+            set -o pipefail
             # 复用 prepare toolchains 记录的工具链目录；异常时重新探测
             if [ -f "$CNB_BUILD_WORKSPACE/.toolchain_dir" ]; then
               TC="$(cat "$CNB_BUILD_WORKSPACE/.toolchain_dir")"
