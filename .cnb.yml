@@ -50,8 +50,6 @@ $:
         - name: build kernel
           script: |
             set -e
-            # 管道中任一命令失败都视为失败，避免 make 报错被 tee 吞掉退出码
-            set -o pipefail
             # 复用 prepare toolchains 记录的工具链目录；异常时重新探测
             if [ -f "$CNB_BUILD_WORKSPACE/.toolchain_dir" ]; then
               TC="$(cat "$CNB_BUILD_WORKSPACE/.toolchain_dir")"
@@ -72,7 +70,14 @@ $:
             cd $CNB_BUILD_WORKSPACE
             if [ "$clean_build" = "true" ]; then rm -rf out; fi
             make -j$(nproc --all) O=out CC="ccache clang" vendor/sdmsteppe-perf_defconfig h130.config
-            make -j$(nproc --all) O=out CC="ccache clang" DTC=dtc 2>&1 | tee kernel.log
+            # POSIX 兼容写法：make 输出到日志文件，失败时打印尾部并返回非零退出码（不依赖 bash 的 pipefail）
+            make -j$(nproc --all) O=out CC="ccache clang" DTC=dtc > kernel.log 2>&1 || {
+              rc=$?
+              echo "=== make FAILED (rc=$rc), tail of kernel.log ==="
+              tail -200 kernel.log
+              exit $rc
+            }
+            tail -20 kernel.log
         - name: check artifacts
           script: |
             cd $CNB_BUILD_WORKSPACE
