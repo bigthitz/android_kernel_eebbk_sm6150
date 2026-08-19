@@ -64,8 +64,12 @@ $:
             export CLANG_TRIPLE=aarch64-linux-gnu-
             export TARGET_PRODUCT=sm6150
             export CCACHE_DIR=/root/.cache/ccache
-            mkdir -p "$CCACHE_DIR" 2>/dev/null || export CCACHE_DIR="$CNB_BUILD_WORKSPACE/.ccache"
-            mkdir -p "$CCACHE_DIR"
+            mkdir -p "$CCACHE_DIR" 2>/dev/null || true
+            if [ ! -w "$CCACHE_DIR" ]; then
+              echo "[warn] $CCACHE_DIR 不可写，改用工作区缓存目录"
+              export CCACHE_DIR="$CNB_BUILD_WORKSPACE/.ccache"
+              mkdir -p "$CCACHE_DIR"
+            fi
             ccache -M 2G
             cd $CNB_BUILD_WORKSPACE
             if [ "$clean_build" = "true" ]; then rm -rf out; fi
